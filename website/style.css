@@ -456,6 +456,79 @@ a {
     color: var(--success);
 }
 
+.code-content .output-blue {
+    color: #60a5fa;
+}
+
+.code-content .output-accent {
+    color: var(--accent);
+}
+
+.code-content .typing-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 18px;
+    background: var(--accent);
+    margin-left: 2px;
+    animation: blink 1s infinite;
+    vertical-align: middle;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.terminal-hint {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 16px 0 12px;
+}
+
+.install-command-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-card);
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.2);
+}
+
+.install-command-box code {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    color: var(--text-primary);
+    user-select: all;
+}
+
+.copy-btn-large {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.copy-btn-large:hover {
+    background: var(--accent-light);
+    transform: scale(1.05);
+}
+
+.copy-btn-large.copied {
+    background: var(--success);
+}
+
 /* Architecture Section */
 .architecture {
     padding: var(--section-padding) 0;
@@ -978,6 +1051,17 @@ a {
     .quick-install-cmd {
         font-size: 0.75rem;
         overflow-x: auto;
+    }
+    
+    .install-command-box {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+    }
+    
+    .install-command-box code {
+        font-size: 0.8rem;
+        word-break: break-all;
     }
     
     .hero-stats {

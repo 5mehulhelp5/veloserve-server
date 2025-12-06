@@ -114,16 +114,18 @@
                     </div>
                     <span class="code-title">terminal</span>
                 </div>
-                <pre class="code-content"><code><span class="comment"># Build with embedded PHP (SAPI mode)</span>
-<span class="prompt">$</span> cargo build --release --features php-embed
-
-<span class="comment"># Run VeloServe</span>
-<span class="prompt">$</span> ./veloserve --config veloserve.toml
-
-<span class="output">⚡ VeloServe v1.0.0 starting...
-✓ PHP 8.3 embedded via SAPI
-✓ Server listening on http://0.0.0.0:8080
-✓ Ready to serve requests!</span></code></pre>
+                <pre class="code-content"><code id="terminal-animation"></code></pre>
+            </div>
+            <p class="terminal-hint">👆 This is all you need! Copy and run:</p>
+            <div class="install-command-box">
+                <code>curl -sSL https://veloserve.io/install.sh | bash</code>
+                <button class="copy-btn-large" onclick="copyMainInstall()">
+                    <span class="copy-text">Copy</span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </section>
@@ -406,6 +408,124 @@ cargo build --release</code></pre>
                 }, 2000);
             });
         }
+        
+        function copyMainInstall() {
+            const cmd = 'curl -sSL https://veloserve.io/install.sh | bash';
+            navigator.clipboard.writeText(cmd).then(() => {
+                const btn = document.querySelector('.copy-btn-large');
+                btn.classList.add('copied');
+                btn.innerHTML = '<span class="copy-text">Copied!</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = '<span class="copy-text">Copy</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+                }, 2000);
+            });
+        }
+        
+        // Terminal typing animation
+        const terminalLines = [
+            { text: '# Install VeloServe (one command!)', type: 'comment', delay: 0 },
+            { text: '$ curl -sSL https://veloserve.io/install.sh | bash', type: 'command', delay: 800 },
+            { text: '', type: 'blank', delay: 1500 },
+            { text: '  ⚡ VeloServe Installer', type: 'output-blue', delay: 1800 },
+            { text: '  → Detected platform: linux-x86_64', type: 'output', delay: 2200 },
+            { text: '  → Downloading VeloServe v1.0.0...', type: 'output', delay: 2600 },
+            { text: '  → Installing to /usr/local/bin...', type: 'output', delay: 3200 },
+            { text: '  ✓ VeloServe installed successfully!', type: 'success', delay: 3800 },
+            { text: '', type: 'blank', delay: 4200 },
+            { text: '# Start serving!', type: 'comment', delay: 4500 },
+            { text: '$ veloserve start --root ./mysite', type: 'command', delay: 5000 },
+            { text: '', type: 'blank', delay: 5800 },
+            { text: '⚡ VeloServe v1.0.0 starting...', type: 'output-accent', delay: 6100 },
+            { text: '✓ PHP 8.3 ready', type: 'success', delay: 6500 },
+            { text: '✓ Server listening on http://0.0.0.0:8080', type: 'success', delay: 6900 },
+            { text: '✓ Ready to serve requests!', type: 'success', delay: 7300 },
+        ];
+        
+        function runTerminalAnimation() {
+            const terminal = document.getElementById('terminal-animation');
+            if (!terminal) return;
+            
+            terminal.innerHTML = '<span class="typing-cursor"></span>';
+            let currentLine = 0;
+            let currentChar = 0;
+            let html = '';
+            
+            function getSpanClass(type) {
+                switch(type) {
+                    case 'comment': return 'comment';
+                    case 'command': return 'prompt';
+                    case 'success': return 'output';
+                    case 'output-blue': return 'output-blue';
+                    case 'output-accent': return 'output-accent';
+                    default: return '';
+                }
+            }
+            
+            function typeNextChar() {
+                if (currentLine >= terminalLines.length) {
+                    // Animation complete, restart after delay
+                    setTimeout(() => {
+                        html = '';
+                        currentLine = 0;
+                        currentChar = 0;
+                        runTerminalAnimation();
+                    }, 4000);
+                    return;
+                }
+                
+                const line = terminalLines[currentLine];
+                
+                if (line.type === 'blank') {
+                    html += '\n';
+                    terminal.innerHTML = html + '<span class="typing-cursor"></span>';
+                    currentLine++;
+                    setTimeout(typeNextChar, 300);
+                    return;
+                }
+                
+                if (currentChar === 0) {
+                    // Start new line
+                    const cls = getSpanClass(line.type);
+                    if (line.type === 'command') {
+                        html += '<span class="prompt">$</span> <span class="' + cls + '">';
+                        currentChar = 2; // Skip "$ "
+                    } else {
+                        html += '<span class="' + cls + '">';
+                    }
+                }
+                
+                const displayText = line.type === 'command' ? line.text.substring(2) : line.text;
+                const charIndex = line.type === 'command' ? currentChar - 2 : currentChar;
+                
+                if (charIndex < displayText.length) {
+                    html += displayText[charIndex];
+                    terminal.innerHTML = html + '<span class="typing-cursor"></span>';
+                    currentChar++;
+                    
+                    // Typing speed varies
+                    const speed = line.type === 'command' ? 30 : 10;
+                    setTimeout(typeNextChar, speed);
+                } else {
+                    // Line complete
+                    html += '</span>\n';
+                    terminal.innerHTML = html + '<span class="typing-cursor"></span>';
+                    currentLine++;
+                    currentChar = 0;
+                    
+                    // Delay before next line
+                    const nextDelay = currentLine < terminalLines.length 
+                        ? terminalLines[currentLine].delay - line.delay 
+                        : 500;
+                    setTimeout(typeNextChar, Math.max(nextDelay, 200));
+                }
+            }
+            
+            setTimeout(typeNextChar, 500);
+        }
+        
+        // Start animation when page loads
+        document.addEventListener('DOMContentLoaded', runTerminalAnimation);
     </script>
 </body>
 </html>
