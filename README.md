@@ -1,10 +1,10 @@
 # VeloServe Web Server
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0--alpha-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/rust-1.70%2B-orange" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/status-development-yellow" alt="Status">
+  <img src="https://img.shields.io/badge/php-embedded-purple" alt="PHP">
 </p>
 
 <p align="center">
@@ -178,12 +178,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development instructions.
 
 ---
 
-## 🐘 PHP Architecture
+## 🐘 Two Ways to Run VeloServe
 
-VeloServe supports **two PHP execution modes**:
+VeloServe v1.0 supports **two PHP execution modes**. Choose based on your needs:
 
-### Current: CGI Mode (v0.1.x)
+### 🔵 Mode 1: CGI Mode (Simple & Portable)
 
+```bash
+# Standard build - works everywhere PHP is installed
+cargo build --release
+
+# Run with php-cgi
+./target/release/veloserve --config veloserve.toml
+```
+
+**Architecture:**
 ```
 ┌─────────────────────────────────────┐
 │         VeloServe (Rust)            │
@@ -201,13 +210,29 @@ VeloServe supports **two PHP execution modes**:
 └─────────────────────────────────────┘
 ```
 
-- ✅ Works now - stable and compatible
-- ✅ Full POST/GET support
-- ✅ All PHP extensions work
-- ⚠️ Process overhead per request
+| Pros | Cons |
+|------|------|
+| ✅ Simple setup | ⚠️ Process overhead per request |
+| ✅ Works with any PHP | ⚠️ ~50ms latency per request |
+| ✅ All extensions work | ⚠️ Requires php-cgi installed |
+| ✅ Easy debugging | |
 
-### Planned: Embedded SAPI Mode (v1.0)
+---
 
+### 🚀 Mode 2: Embedded SAPI Mode (Maximum Performance)
+
+```bash
+# Install PHP embed library (Ubuntu/Debian)
+sudo apt install php-dev libphp-embed libxml2-dev libsodium-dev libargon2-dev
+
+# Build with embedded PHP - PHP is INSIDE VeloServe!
+cargo build --release --features php-embed
+
+# Run - no external PHP needed!
+./target/release/veloserve --config veloserve.toml
+```
+
+**Architecture:**
 ```
 ┌─────────────────────────────────────┐
 │         VeloServe (Rust)            │
@@ -224,19 +249,35 @@ VeloServe supports **two PHP execution modes**:
 └─────────────────────────────────────┘
 ```
 
-- 🚀 10-100x faster than CGI
-- 🚀 Single binary deployment
-- 🚀 True "integrated PHP engine"
-- 📋 Requires `libphp-embed` development files
+| Pros | Cons |
+|------|------|
+| 🚀 10-100x faster than CGI | 📋 Requires libphp-embed |
+| 🚀 ~1ms latency per request | 📋 Larger binary size |
+| 🚀 Single binary deployment | 📋 PHP version locked at compile |
+| 🚀 True "integrated PHP engine" | |
 
-**Enable with:**
-```bash
-# Install PHP embed SAPI
-sudo apt install php-dev libphp-embed
+---
 
-# Build VeloServe with embedded PHP
-cargo build --features php-embed
-```
+### 📊 Performance Comparison
+
+| Mode | Requests/sec | Latency | Memory |
+|------|-------------|---------|--------|
+| CGI Mode | ~500 req/s | ~50ms | Low (on-demand) |
+| **SAPI Mode** | **~10,000 req/s** | **~1ms** | Medium (persistent) |
+| PHP-FPM (reference) | ~2,000 req/s | ~10ms | Medium |
+
+---
+
+### 🛠️ Which Mode Should I Use?
+
+| Use Case | Recommended Mode |
+|----------|------------------|
+| Development / Testing | CGI Mode |
+| Production (low traffic) | CGI Mode |
+| Production (high traffic) | **SAPI Mode** |
+| WordPress / Magento | **SAPI Mode** |
+| Serverless / Lambda | CGI Mode |
+| Docker containers | Either (SAPI for performance) |
 
 ---
 

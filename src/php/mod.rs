@@ -5,17 +5,27 @@
 //! ## 1. CGI Mode (Default)
 //!
 //! Uses `php-cgi` binary with process pooling. Simple and portable.
-//! This is the current implementation.
+//! ```bash
+//! cargo build --release
+//! ./veloserve --config veloserve.toml
+//! ```
 //!
-//! ## 2. Embedded SAPI Mode (Planned)
+//! ## 2. Embedded SAPI Mode
 //!
 //! Links directly against `libphp.so` for maximum performance.
 //! PHP runs inside VeloServe - no process spawning!
-//! Enable with: `cargo build --features php-embed`
+//! ```bash
+//! # Install PHP embed library
+//! sudo apt install php-dev libphp-embed
+//!
+//! # Build with embedded PHP
+//! cargo build --release --features php-embed
+//! ./veloserve --config veloserve.toml
+//! ```
 //!
 //! ## CGI Environment Variables
 //!
-//! This module sets all standard CGI environment variables:
+//! Both modes set all standard CGI environment variables:
 //! - `SCRIPT_FILENAME`: Absolute path to the PHP script
 //! - `SCRIPT_NAME`: URI path to the script
 //! - `PATH_INFO`: Additional path after the script name
@@ -30,7 +40,11 @@
 //! - `/blog/post/123` → `index.php` with `PATH_INFO=/blog/post/123`
 //! - `/api.php/users/1` → `api.php` with `PATH_INFO=/users/1`
 
-// SAPI module for embedded PHP (future)
+// FFI bindings for PHP embed
+#[cfg(feature = "php-embed")]
+pub mod ffi;
+
+// SAPI module for embedded PHP
 pub mod sapi;
 
 use crate::config::PhpConfig;
