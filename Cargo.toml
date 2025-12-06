@@ -58,9 +58,12 @@ chrono = { version = "0.4", features = ["serde"] }
 num_cpus = "1.16"
 socket2 = "0.5"
 
-# PHP process management
+# PHP process management (Unix only)
+[target.'cfg(unix)'.dependencies]
 nix = { version = "0.27", features = ["process", "signal"] }
-tempfile = "3.9"
+
+[dependencies.tempfile]
+version = "3.9"
 
 [dev-dependencies]
 criterion = "0.5"

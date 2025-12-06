@@ -7,6 +7,12 @@ use clap::Subcommand;
 use std::fs;
 use std::path::Path;
 
+// Unix-specific imports for signal handling
+#[cfg(unix)]
+use nix::sys::signal::Signal;
+#[cfg(unix)]
+use nix::unistd::Pid;
+
 /// Cache management subcommands
 #[derive(Subcommand)]
 pub enum CacheCommand {
@@ -111,8 +117,16 @@ pub fn handle_config_command(config_path: &Path, cmd: ConfigCommand) -> Result<(
         }
         ConfigCommand::Reload => {
             println!("Reloading configuration...");
-            send_signal_to_server(nix::sys::signal::Signal::SIGHUP)?;
-            println!("Configuration reload signal sent.");
+            #[cfg(unix)]
+            {
+                send_signal_to_server(Signal::SIGHUP)?;
+                println!("Configuration reload signal sent.");
+            }
+            #[cfg(windows)]
+            {
+                println!("Configuration reload not supported on Windows yet.");
+                println!("Please restart the server manually.");
+            }
         }
         ConfigCommand::Test => {
             println!("Testing configuration: {:?}", config_path);
@@ -209,8 +223,29 @@ default_ttl = 3600
 /// Stop the running server
 pub fn stop_server() -> Result<()> {
     println!("Stopping VeloServe...");
-    send_signal_to_server(nix::sys::signal::Signal::SIGTERM)?;
-    println!("Stop signal sent.");
+    #[cfg(unix)]
+    {
+        send_signal_to_server(Signal::SIGTERM)?;
+        println!("Stop signal sent.");
+    }
+    #[cfg(windows)]
+    {
+        // On Windows, we try to terminate the process
+        let pid_file = "veloserve.pid";
+        if Path::new(pid_file).exists() {
+            let pid = fs::read_to_string(pid_file)?;
+            let pid: u32 = pid.trim().parse()?;
+            println!("Attempting to stop process {}...", pid);
+            // Use taskkill on Windows
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .output();
+            let _ = fs::remove_file(pid_file);
+            println!("Stop signal sent.");
+        } else {
+            println!("Server not running (no PID file).");
+        }
+    }
     Ok(())
 }
 
@@ -219,8 +254,12 @@ pub fn show_status() -> Result<()> {
     println!("VeloServe Status");
     println!("================");
 
-    // Check if PID file exists
+    // Check if PID file exists (different paths for Unix/Windows)
+    #[cfg(unix)]
     let pid_file = "/var/run/veloserve.pid";
+    #[cfg(windows)]
+    let pid_file = "veloserve.pid";
+
     if Path::new(pid_file).exists() {
         let pid = fs::read_to_string(pid_file)?;
         let pid: i32 = pid.trim().parse()?;
@@ -247,8 +286,9 @@ fn send_management_command(cmd: &str) -> Result<()> {
     Ok(())
 }
 
-/// Send a signal to the running server
-fn send_signal_to_server(signal: nix::sys::signal::Signal) -> Result<()> {
+/// Send a signal to the running server (Unix only)
+#[cfg(unix)]
+fn send_signal_to_server(signal: Signal) -> Result<()> {
     let pid_file = "/var/run/veloserve.pid";
 
     if !Path::new(pid_file).exists() {
@@ -258,15 +298,28 @@ fn send_signal_to_server(signal: nix::sys::signal::Signal) -> Result<()> {
     let pid = fs::read_to_string(pid_file)?;
     let pid: i32 = pid.trim().parse()?;
 
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal)
+    nix::sys::signal::kill(Pid::from_raw(pid), signal)
         .map_err(|e| anyhow!("Failed to send signal: {}", e))?;
 
     Ok(())
 }
 
 /// Check if a process is running
+#[cfg(unix)]
 fn is_process_running(pid: i32) -> bool {
     Path::new(&format!("/proc/{}", pid)).exists()
+}
+
+/// Check if a process is running (Windows)
+#[cfg(windows)]
+fn is_process_running(pid: i32) -> bool {
+    // On Windows, try to open the process
+    use std::process::Command;
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {}", pid)])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+        .unwrap_or(false)
 }
 
 /// Warm cache from URL list file
