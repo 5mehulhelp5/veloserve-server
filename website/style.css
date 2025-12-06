@@ -2,7 +2,41 @@
 /* A modern, high-performance aesthetic */
 
 :root {
-    /* Colors - Rust/Fire inspired */
+    /* Light theme (default) */
+    --bg-dark: #ffffff;
+    --bg-card: #f8f9fa;
+    --bg-elevated: #f1f3f4;
+    --border: #e0e0e0;
+    --border-light: #d0d0d0;
+    
+    --text-primary: #1a1a1a;
+    --text-secondary: #4a4a4a;
+    --text-muted: #6a6a6a;
+    
+    --accent: #f97316;
+    --accent-light: #fb923c;
+    --accent-dark: #ea580c;
+    --accent-glow: rgba(249, 115, 22, 0.2);
+    
+    --rust: #b7410e;
+    --php: #777bb4;
+    --success: #22c55e;
+    
+    /* Code blocks */
+    --code-bg: #1e1e1e;
+    --code-text: #d4d4d4;
+    
+    /* Typography */
+    --font-display: 'Outfit', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    
+    /* Spacing */
+    --container: 1200px;
+    --section-padding: 120px;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
     --bg-dark: #0a0a0b;
     --bg-card: #111113;
     --bg-elevated: #18181b;
@@ -13,22 +47,10 @@
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     
-    --accent: #f97316;
-    --accent-light: #fb923c;
-    --accent-dark: #ea580c;
     --accent-glow: rgba(249, 115, 22, 0.3);
     
-    --rust: #b7410e;
-    --php: #777bb4;
-    --success: #22c55e;
-    
-    /* Typography */
-    --font-display: 'Outfit', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-    
-    /* Spacing */
-    --container: 1200px;
-    --section-padding: 120px;
+    --code-bg: #111113;
+    --code-text: #d4d4d4;
 }
 
 /* Reset */
@@ -139,6 +161,42 @@ a {
     background: var(--bg-card);
 }
 
+/* Theme toggle button */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.theme-toggle .sun-icon {
+    display: none;
+}
+
+.theme-toggle .moon-icon {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .sun-icon {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .moon-icon {
+    display: none;
+}
+
 /* Hero Section */
 .hero {
     min-height: 100vh;
@@ -163,10 +221,16 @@ a {
     position: absolute;
     inset: 0;
     background-image: 
-        linear-gradient(rgba(249, 115, 22, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(249, 115, 22, 0.03) 1px, transparent 1px);
+        linear-gradient(rgba(249, 115, 22, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(249, 115, 22, 0.05) 1px, transparent 1px);
     background-size: 60px 60px;
     mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+}
+
+[data-theme="dark"] .grid-pattern {
+    background-image: 
+        linear-gradient(rgba(249, 115, 22, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(249, 115, 22, 0.03) 1px, transparent 1px);
 }
 
 .glow {
@@ -182,7 +246,7 @@ a {
     background: var(--accent);
     top: -200px;
     right: -200px;
-    opacity: 0.15;
+    opacity: 0.08;
 }
 
 .glow-2 {
@@ -191,6 +255,14 @@ a {
     background: var(--php);
     bottom: 0;
     left: -100px;
+    opacity: 0.05;
+}
+
+[data-theme="dark"] .glow-1 {
+    opacity: 0.15;
+}
+
+[data-theme="dark"] .glow-2 {
     opacity: 0.1;
 }
 
@@ -392,10 +464,16 @@ a {
 }
 
 .code-window {
-    background: var(--bg-card);
+    background: var(--code-bg);
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
+    box-shadow: 
+        0 0 0 1px rgba(0, 0, 0, 0.1),
+        0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .code-window {
     box-shadow: 
         0 0 0 1px rgba(255, 255, 255, 0.05),
         0 20px 50px rgba(0, 0, 0, 0.5);
@@ -406,8 +484,8 @@ a {
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
+    background: #2d2d2d;
+    border-bottom: 1px solid #3d3d3d;
 }
 
 .code-dots {
@@ -438,6 +516,7 @@ a {
     font-size: 0.9rem;
     line-height: 1.8;
     overflow-x: auto;
+    color: var(--code-text);
 }
 
 .code-content code {
@@ -445,7 +524,7 @@ a {
 }
 
 .code-content .comment {
-    color: var(--text-muted);
+    color: #6a9955;
 }
 
 .code-content .prompt {
@@ -453,7 +532,7 @@ a {
 }
 
 .code-content .output {
-    color: var(--success);
+    color: #4ec9b0;
 }
 
 .code-content .output-blue {

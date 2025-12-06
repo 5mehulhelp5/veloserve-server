@@ -34,3 +34,11 @@ dist/
 release/
 
 releases/
+
+# Vercel
+.vercel
+.env*.local
+
+# Website build
+website/.vercel
+website/node_modules/
