@@ -5,7 +5,7 @@ FROM gitpod/workspace-full
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/home/gitpod/.cargo/bin:${PATH}"
 
-# Install PHP 8.3 and extensions
+# Install PHP 8.3 and extensions (including SQLite for WordPress demo)
 RUN sudo apt-get update && sudo apt-get install -y \
     php8.3 \
     php8.3-cli \
@@ -19,6 +19,7 @@ RUN sudo apt-get update && sudo apt-get install -y \
     php8.3-bcmath \
     php8.3-soap \
     php8.3-opcache \
+    php8.3-sqlite3 \
     && sudo rm -rf /var/lib/apt/lists/*
 
 # Create web directory

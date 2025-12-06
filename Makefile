@@ -42,6 +42,20 @@ run-trace:
 run-release: release
 	RUST_LOG=info ./target/release/veloserve --config veloserve.toml
 
+## Run with WordPress (one-click demo!)
+wordpress: build
+	@if [ ! -d "/var/www/wordpress" ]; then \
+		echo "📦 Setting up WordPress..."; \
+		bash .devcontainer/wordpress-setup.sh; \
+	fi
+	@echo "🚀 Starting VeloServe with WordPress..."
+	@echo "🌐 Open the forwarded port 8080 to access WordPress!"
+	RUST_LOG=info ./target/debug/veloserve --config wordpress.toml
+
+## Setup WordPress only (without starting server)
+wordpress-setup:
+	bash .devcontainer/wordpress-setup.sh
+
 # ============================================
 # Testing
 # ============================================
@@ -222,6 +236,10 @@ help:
 	@echo "  make run          - Run with development config"
 	@echo "  make run-debug    - Run with debug logging"
 	@echo "  make run-release  - Run optimized release build"
+	@echo ""
+	@echo "🌐 WordPress Demo:"
+	@echo "  make wordpress       - Setup & run WordPress with VeloServe"
+	@echo "  make wordpress-setup - Setup WordPress only (no server start)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test         - Run all tests"

@@ -21,6 +21,7 @@ sudo apt-get install -y --no-install-recommends \
     php-soap \
     php-opcache \
     php-iconv \
+    php-sqlite3 \
     2>/dev/null || true
 
 # Build VeloServe

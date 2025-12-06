@@ -1,7 +1,17 @@
 //! PHP Integration Module
 //!
-//! Process pool-based PHP execution for VeloServe.
-//! Implements CGI/FastCGI-style environment variables like Nginx + PHP-FPM.
+//! VeloServe supports two PHP execution modes:
+//!
+//! ## 1. CGI Mode (Default)
+//!
+//! Uses `php-cgi` binary with process pooling. Simple and portable.
+//! This is the current implementation.
+//!
+//! ## 2. Embedded SAPI Mode (Planned)
+//!
+//! Links directly against `libphp.so` for maximum performance.
+//! PHP runs inside VeloServe - no process spawning!
+//! Enable with: `cargo build --features php-embed`
 //!
 //! ## CGI Environment Variables
 //!
@@ -19,6 +29,9 @@
 //! Supports clean URLs like WordPress/Laravel:
 //! - `/blog/post/123` → `index.php` with `PATH_INFO=/blog/post/123`
 //! - `/api.php/users/1` → `api.php` with `PATH_INFO=/users/1`
+
+// SAPI module for embedded PHP (future)
+pub mod sapi;
 
 use crate::config::PhpConfig;
 use anyhow::{anyhow, Result};
@@ -143,6 +156,27 @@ impl PhpPool {
         script_name: &str,
         path_info: &str,
     ) -> Result<String> {
+        self.execute_with_body(script_path, req, doc_root, script_name, path_info, &[]).await
+    }
+
+    /// Execute a PHP script with full CGI environment and POST body
+    ///
+    /// # Arguments
+    /// * `script_path` - Absolute path to the PHP script
+    /// * `req` - HTTP request
+    /// * `doc_root` - Document root directory
+    /// * `script_name` - URI path to the script (e.g., "/index.php")
+    /// * `path_info` - Additional path info (e.g., "/blog/post/123")
+    /// * `body` - Request body (for POST/PUT requests)
+    pub async fn execute_with_body(
+        &self,
+        script_path: &Path,
+        req: &Request<hyper::body::Incoming>,
+        doc_root: &Path,
+        script_name: &str,
+        path_info: &str,
+        body: &[u8],
+    ) -> Result<String> {
         if !self.is_available() {
             return Err(anyhow!("PHP support is not available"));
         }
@@ -152,7 +186,40 @@ impl PhpPool {
             .map_err(|_| anyhow!("Failed to acquire PHP worker permit"))?;
 
         self.active_workers.fetch_add(1, Ordering::SeqCst);
-        let result = self.do_execute(script_path, req, doc_root, script_name, path_info).await;
+        let result = self.do_execute_with_body(script_path, req, doc_root, script_name, path_info, body).await;
+        self.active_workers.fetch_sub(1, Ordering::SeqCst);
+
+        result
+    }
+
+    /// Execute a PHP script using request parts (for when body has been consumed)
+    ///
+    /// # Arguments
+    /// * `script_path` - Absolute path to the PHP script
+    /// * `req_parts` - HTTP request parts (headers, method, uri, etc.)
+    /// * `doc_root` - Document root directory
+    /// * `script_name` - URI path to the script (e.g., "/index.php")
+    /// * `path_info` - Additional path info (e.g., "/blog/post/123")
+    /// * `body` - Request body (for POST/PUT requests)
+    pub async fn execute_cgi(
+        &self,
+        script_path: &Path,
+        req_parts: &hyper::http::request::Parts,
+        doc_root: &Path,
+        script_name: &str,
+        path_info: &str,
+        body: &[u8],
+    ) -> Result<String> {
+        if !self.is_available() {
+            return Err(anyhow!("PHP support is not available"));
+        }
+
+        // Acquire semaphore permit (limits concurrent PHP processes)
+        let _permit = self.semaphore.acquire().await
+            .map_err(|_| anyhow!("Failed to acquire PHP worker permit"))?;
+
+        self.active_workers.fetch_add(1, Ordering::SeqCst);
+        let result = self.do_execute_cgi(script_path, req_parts, doc_root, script_name, path_info, body).await;
         self.active_workers.fetch_sub(1, Ordering::SeqCst);
 
         result
@@ -185,24 +252,31 @@ impl PhpPool {
         result
     }
 
-    /// Internal: Execute PHP with full CGI environment
-    async fn do_execute(
+    /// Internal: Execute PHP with full CGI environment and request body
+    async fn do_execute_with_body(
         &self,
         script_path: &Path,
         req: &Request<hyper::body::Incoming>,
         doc_root: &Path,
         script_name: &str,
         path_info: &str,
+        body: &[u8],
     ) -> Result<String> {
         debug!(
-            "Executing PHP: {} (script_name={}, path_info={})",
+            "Executing PHP: {} (script_name={}, path_info={}, body_len={})",
             script_path.display(),
             script_name,
-            path_info
+            path_info,
+            body.len()
         );
 
         // Build CGI environment variables (like Nginx + PHP-FPM)
-        let env = build_cgi_env(req, script_path, doc_root, script_name, path_info);
+        let mut env = build_cgi_env(req, script_path, doc_root, script_name, path_info);
+        
+        // Update CONTENT_LENGTH with actual body size (important for POST)
+        if !body.is_empty() {
+            env.insert("CONTENT_LENGTH".to_string(), body.len().to_string());
+        }
 
         // Build command
         let mut cmd = Command::new(&self.php_binary);
@@ -219,14 +293,115 @@ impl PhpPool {
         // Set environment variables
         cmd.envs(&env);
 
-        // Configure I/O
-        cmd.stdout(Stdio::piped())
+        // Configure I/O - need stdin for POST data
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // Spawn and execute
+        // Spawn process
+        let mut child = cmd.spawn()
+            .map_err(|e| anyhow!("Failed to spawn PHP: {}", e))?;
+
+        // Write POST body to stdin
+        if !body.is_empty() {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(body).await
+                    .map_err(|e| anyhow!("Failed to write body to PHP stdin: {}", e))?;
+            }
+        } else if let Some(stdin) = child.stdin.take() {
+            drop(stdin);
+        }
+
+        // Wait for completion with timeout
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(self.config.max_execution_time),
-            cmd.output(),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| anyhow!("PHP script execution timed out after {}s", self.config.max_execution_time))?
+        .map_err(|e| anyhow!("Failed to execute PHP script: {}", e))?;
+
+        // Log any errors
+        if !output.stderr.is_empty() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stderr.trim().is_empty() {
+                warn!("PHP stderr: {}", stderr.trim());
+            }
+        }
+
+        // Check exit status but still return output if we have it
+        if !output.status.success() && output.stdout.is_empty() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("PHP script failed: {}", stderr));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Internal: Execute PHP using request parts
+    async fn do_execute_cgi(
+        &self,
+        script_path: &Path,
+        req_parts: &hyper::http::request::Parts,
+        doc_root: &Path,
+        script_name: &str,
+        path_info: &str,
+        body: &[u8],
+    ) -> Result<String> {
+        debug!(
+            "Executing PHP CGI: {} (script_name={}, path_info={}, body_len={})",
+            script_path.display(),
+            script_name,
+            path_info,
+            body.len()
+        );
+
+        // Build CGI environment variables
+        let mut env = build_cgi_env_from_parts(req_parts, script_path, doc_root, script_name, path_info);
+        
+        // Update CONTENT_LENGTH with actual body size (important for POST)
+        if !body.is_empty() {
+            env.insert("CONTENT_LENGTH".to_string(), body.len().to_string());
+        }
+
+        // Build command
+        let mut cmd = Command::new(&self.php_binary);
+        self.configure_php_command(&mut cmd);
+
+        // Execute the PHP script directly
+        cmd.arg(script_path);
+
+        // Set working directory to script directory for relative includes
+        if let Some(script_dir) = script_path.parent() {
+            cmd.current_dir(script_dir);
+        }
+
+        // Set environment variables
+        cmd.envs(&env);
+
+        // Configure I/O - need stdin for POST data
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Spawn process
+        let mut child = cmd.spawn()
+            .map_err(|e| anyhow!("Failed to spawn PHP: {}", e))?;
+
+        // Write POST body to stdin
+        if !body.is_empty() {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(body).await
+                    .map_err(|e| anyhow!("Failed to write body to PHP stdin: {}", e))?;
+            }
+        } else if let Some(stdin) = child.stdin.take() {
+            drop(stdin);
+        }
+
+        // Wait for completion with timeout
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(self.config.max_execution_time),
+            child.wait_with_output(),
         )
         .await
         .map_err(|_| anyhow!("PHP script execution timed out after {}s", self.config.max_execution_time))?
@@ -356,6 +531,119 @@ fn find_php_binary(preferred_version: &str) -> PathBuf {
 
     // Default to "php" and hope it's in PATH
     PathBuf::from("php")
+}
+
+/// Build CGI environment from request parts (used when body has been consumed)
+fn build_cgi_env_from_parts(
+    parts: &hyper::http::request::Parts,
+    script_path: &Path,
+    doc_root: &Path,
+    script_name: &str,
+    path_info: &str,
+) -> HashMap<String, String> {
+    let mut env = HashMap::new();
+
+    // === CGI/1.1 Standard Variables (RFC 3875) ===
+
+    env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
+    env.insert("SERVER_PROTOCOL".to_string(), format!("{:?}", parts.version));
+    env.insert(
+        "SERVER_SOFTWARE".to_string(),
+        format!("VeloServe/{}", crate::VERSION),
+    );
+
+    // Request method
+    env.insert("REQUEST_METHOD".to_string(), parts.method.to_string());
+
+    // Request URI (original, includes query string)
+    env.insert("REQUEST_URI".to_string(), parts.uri.to_string());
+
+    // Script name (URI path to the PHP script)
+    env.insert("SCRIPT_NAME".to_string(), script_name.to_string());
+
+    // Script filename (absolute filesystem path)
+    env.insert(
+        "SCRIPT_FILENAME".to_string(),
+        script_path.to_string_lossy().to_string(),
+    );
+
+    // Document root
+    env.insert(
+        "DOCUMENT_ROOT".to_string(),
+        doc_root.to_string_lossy().to_string(),
+    );
+
+    // Query string
+    env.insert(
+        "QUERY_STRING".to_string(),
+        parts.uri.query().unwrap_or("").to_string(),
+    );
+
+    // === PATH_INFO support (for clean URLs) ===
+    if !path_info.is_empty() {
+        env.insert("PATH_INFO".to_string(), path_info.to_string());
+        let path_translated = doc_root.join(path_info.trim_start_matches('/'));
+        env.insert(
+            "PATH_TRANSLATED".to_string(),
+            path_translated.to_string_lossy().to_string(),
+        );
+    }
+
+    // === Server identification ===
+    if let Some(host) = parts.headers.get("host") {
+        if let Ok(host_str) = host.to_str() {
+            let host_parts: Vec<&str> = host_str.split(':').collect();
+            env.insert("SERVER_NAME".to_string(), host_parts[0].to_string());
+            env.insert("HTTP_HOST".to_string(), host_str.to_string());
+
+            if host_parts.len() > 1 {
+                env.insert("SERVER_PORT".to_string(), host_parts[1].to_string());
+            } else {
+                env.insert("SERVER_PORT".to_string(), "80".to_string());
+            }
+        }
+    } else {
+        env.insert("SERVER_NAME".to_string(), "localhost".to_string());
+        env.insert("SERVER_PORT".to_string(), "80".to_string());
+    }
+
+    // === Content headers ===
+    if let Some(ct) = parts.headers.get("content-type") {
+        if let Ok(v) = ct.to_str() {
+            env.insert("CONTENT_TYPE".to_string(), v.to_string());
+        }
+    }
+
+    if let Some(cl) = parts.headers.get("content-length") {
+        if let Ok(v) = cl.to_str() {
+            env.insert("CONTENT_LENGTH".to_string(), v.to_string());
+        }
+    }
+
+    // === HTTP headers (converted to HTTP_* format) ===
+    for (name, value) in &parts.headers {
+        if name == "content-type" || name == "content-length" {
+            continue;
+        }
+
+        let env_name = format!(
+            "HTTP_{}",
+            name.as_str().to_uppercase().replace('-', "_")
+        );
+
+        if let Ok(v) = value.to_str() {
+            env.insert(env_name, v.to_string());
+        }
+    }
+
+    // === PHP-specific variables ===
+    env.insert("REDIRECT_STATUS".to_string(), "200".to_string());
+    env.insert("PHP_SELF".to_string(), script_name.to_string());
+    env.insert("HTTPS".to_string(), "off".to_string());
+    env.insert("REMOTE_ADDR".to_string(), "127.0.0.1".to_string());
+    env.insert("REMOTE_PORT".to_string(), "0".to_string());
+
+    env
 }
 
 /// Build CGI environment variables (like Nginx + PHP-FPM)

@@ -9,6 +9,12 @@ repository = "https://github.com/veloserve/veloserve"
 keywords = ["web-server", "http", "php", "cache", "performance"]
 categories = ["web-programming::http-server", "caching"]
 
+[features]
+default = []
+# Enable embedded PHP SAPI (requires libphp-embed)
+# Build with: cargo build --features php-embed
+php-embed = []
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }

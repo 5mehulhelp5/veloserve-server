@@ -1,47 +1,50 @@
 # Ona Configuration for VeloServe
 # Open in Ona: https://ona.com/#https://github.com/veloserve/veloserve
+#
+# This configuration provides:
+# - Rust development environment
+# - PHP 8.3 with WordPress/Magento extensions
+# - One-click WordPress demo setup
 
 image:
   file: .gitpod.Dockerfile
 
 tasks:
-  - name: Setup & Build
+  - name: Build VeloServe
     init: |
-      # Install PHP extensions
-      sudo apt-get update
-      sudo apt-get install -y php-mysql php-curl php-gd php-mbstring \
-          php-xml php-zip php-intl php-bcmath php-soap php-opcache
-      
-      # Build VeloServe
+      echo "📦 Installing PHP extensions..."
+      sudo apt-get update && sudo apt-get install -y php-sqlite3 php-mysql php-curl php-gd php-mbstring php-xml php-zip php-intl php-bcmath || true
+      echo "🔨 Building VeloServe..."
       cargo build
-      
-      # Setup test files
-      mkdir -p /var/www/html
-      cp -r examples/www/* /var/www/html/
+      echo "✅ Build complete!"
     command: |
       echo ""
-      echo "✅ VeloServe is ready!"
-      echo ""
-      echo "🚀 Start the server:"
-      echo "   make run"
-      echo ""
-      echo "📋 Or run directly:"
-      echo "   cargo run -- --config veloserve.toml"
+      echo "╔══════════════════════════════════════════════════════════════╗"
+      echo "║           🚀 VeloServe Development Environment               ║"
+      echo "╠══════════════════════════════════════════════════════════════╣"
+      echo "║                                                              ║"
+      echo "║  Quick Commands:                                             ║"
+      echo "║  ─────────────────────────────────────────────────────────   ║"
+      echo "║  make run              Start VeloServe (basic demo)          ║"
+      echo "║  make wordpress        🆕 Start with WordPress!              ║"
+      echo "║  make test             Run tests                             ║"
+      echo "║                                                              ║"
+      echo "║  After starting, click the 🌐 globe icon on port 8080        ║"
+      echo "║                                                              ║"
+      echo "╚══════════════════════════════════════════════════════════════╝"
       echo ""
 
-  - name: Server
-    command: |
-      # Wait for build to complete
-      echo "Starting VeloServe..."
-      sleep 5
-      RUST_LOG=info cargo run -- --config veloserve.toml
+  - name: WordPress Setup (Optional)
+    init: |
+      echo "📦 Pre-downloading WordPress..."
+      bash .devcontainer/wordpress-setup.sh || true
 
 ports:
   - port: 8080
     onOpen: notify
     visibility: public
     name: VeloServe HTTP
-    description: VeloServe Web Server
+    description: VeloServe Web Server (WordPress/Demo)
 
   - port: 443
     onOpen: ignore
@@ -64,4 +67,3 @@ github:
     addCheck: true
     addComment: false
     addBadge: true
-

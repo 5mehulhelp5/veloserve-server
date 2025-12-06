@@ -1,5 +1,5 @@
 {
-  "name": "VeloServe Development",
+  "name": "VeloServe Development (with WordPress Demo)",
   "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
   
   "features": {

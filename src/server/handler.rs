@@ -10,11 +10,11 @@ use crate::server::static_files::StaticFileHandler;
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, Response, StatusCode};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Request handler for VeloServe
 /// 
@@ -67,8 +67,9 @@ impl RequestHandler {
         &self,
         req: Request<hyper::body::Incoming>,
     ) -> Result<Response<Full<Bytes>>> {
-        let method = req.method();
-        let path = req.uri().path();
+        let method = req.method().clone();
+        let path = req.uri().path().to_string();
+        let uri = req.uri().clone();
 
         // Health check endpoint (internal)
         if path == "/health" || path == "/healthz" {
@@ -89,19 +90,38 @@ impl RequestHandler {
             .map(|v| v.index.clone())
             .unwrap_or_else(|| vec!["index.php".to_string(), "index.html".to_string(), "index.htm".to_string()]);
 
+        // Read the request body for POST/PUT requests
+        // We need to consume the body before we can use the request further
+        let (parts, incoming_body) = req.into_parts();
+        
+        let body = if method == Method::POST || method == Method::PUT {
+            match incoming_body.collect().await {
+                Ok(collected) => collected.to_bytes().to_vec(),
+                Err(e) => {
+                    warn!("Failed to read request body: {}", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        // Create a reference-like wrapper with the request parts for PHP execution
+        let req_parts = &parts;
+
         // === NGINX/APACHE-STYLE REQUEST PROCESSING ===
         
         // Step 1: Try the exact URI as a file
-        let file_path = self.resolve_path(&doc_root, path);
+        let file_path = self.resolve_path(&doc_root, &path);
         
         if file_path.is_file() {
             // Exact file exists
             if self.is_php_file(&file_path) {
                 // PHP file - execute it
-                return self.execute_php(&req, &doc_root, &file_path, path, "").await;
+                return self.execute_php(req_parts, &doc_root, &file_path, &path, "", body).await;
             } else {
                 // Static file - serve it
-                return self.serve_static(&req, &file_path).await;
+                return self.serve_static_parts(req_parts, &file_path).await;
             }
         }
 
@@ -113,9 +133,9 @@ impl RequestHandler {
                     let index_uri = format!("{}/{}", path.trim_end_matches('/'), index);
                     
                     if self.is_php_file(&index_path) {
-                        return self.execute_php(&req, &doc_root, &index_path, &index_uri, "").await;
+                        return self.execute_php(req_parts, &doc_root, &index_path, &index_uri, "", body).await;
                     } else {
-                        return self.serve_static(&req, &index_path).await;
+                        return self.serve_static_parts(req_parts, &index_path).await;
                     }
                 }
             }
@@ -125,13 +145,14 @@ impl RequestHandler {
 
         // Step 3: Check for PHP file with PATH_INFO
         // This handles URLs like /index.php/page/1 or /blog.php/post/hello
-        if let Some(php_info) = self.resolve_php_path_info(&doc_root, path) {
+        if let Some(php_info) = self.resolve_php_path_info(&doc_root, &path) {
             return self.execute_php(
-                &req,
+                req_parts,
                 &doc_root,
                 &php_info.script_filename,
                 &php_info.script_name,
                 &php_info.path_info,
+                body,
             ).await;
         }
 
@@ -142,7 +163,7 @@ impl RequestHandler {
             let front_controller = doc_root.join("index.php");
             if front_controller.is_file() {
                 debug!("Using front controller pattern: index.php with PATH_INFO={}", path);
-                return self.execute_php(&req, &doc_root, &front_controller, "/index.php", path).await;
+                return self.execute_php(req_parts, &doc_root, &front_controller, "/index.php", &path, body).await;
             }
         }
 
@@ -200,11 +221,12 @@ impl RequestHandler {
     /// Execute a PHP script
     async fn execute_php(
         &self,
-        req: &Request<hyper::body::Incoming>,
+        req_parts: &hyper::http::request::Parts,
         doc_root: &Path,
         script_path: &Path,
         script_name: &str,
         path_info: &str,
+        body: Vec<u8>,
     ) -> Result<Response<Full<Bytes>>> {
         // Check if PHP is available
         if !self.php_pool.is_available() {
@@ -213,19 +235,21 @@ impl RequestHandler {
         }
 
         debug!(
-            "Executing PHP: script={}, script_name={}, path_info={}",
+            "Executing PHP: script={}, script_name={}, path_info={}, body_len={}",
             script_path.display(),
             script_name,
-            path_info
+            path_info,
+            body.len()
         );
 
-        // Execute PHP script with full CGI environment
-        match self.php_pool.execute_with_path_info(
+        // Execute PHP script with full CGI environment and POST body
+        match self.php_pool.execute_cgi(
             script_path,
-            req,
+            req_parts,
             doc_root,
             script_name,
             path_info,
+            &body,
         ).await {
             Ok(output) => {
                 // Parse PHP output (may contain headers)
@@ -344,6 +368,20 @@ impl RequestHandler {
     ) -> Result<Response<Full<Bytes>>> {
         // Only GET and HEAD for static files
         if req.method() != Method::GET && req.method() != Method::HEAD {
+            return self.method_not_allowed();
+        }
+
+        self.static_handler.serve(path).await
+    }
+
+    /// Serve a static file (using request parts)
+    async fn serve_static_parts(
+        &self,
+        req_parts: &hyper::http::request::Parts,
+        path: &Path,
+    ) -> Result<Response<Full<Bytes>>> {
+        // Only GET and HEAD for static files
+        if req_parts.method != Method::GET && req_parts.method != Method::HEAD {
             return self.method_not_allowed();
         }
 

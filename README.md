@@ -18,29 +18,41 @@ A high-performance web server designed as a modern alternative to LiteSpeed/Ngin
 
 ## ⚡ Quick Start (Cloud Development)
 
-**No local setup required!** Start developing instantly in your browser:
+**No local setup required!** Start developing instantly in your browser with **Ona.com** or **GitHub Codespaces**.
 
-### Option 1: GitHub Codespaces (Recommended)
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=veloserve/veloserve)
-
-1. Click the button above (or go to **Code** → **Codespaces** → **Create codespace**)
-2. Wait ~2 minutes for setup to complete
-3. Run the server:
-   ```bash
-   make run
-   ```
-4. Click the **Ports** tab → Click the 🌐 globe icon next to port `8080`
-5. Your VeloServe instance is now live!
-
-### Option 2: Ona
+### 🟠 Option 1: Ona.com
 
 [![Open in Ona](https://img.shields.io/badge/Open%20in-Ona-ff6b35?style=for-the-badge&logo=cloud)](https://ona.com/#https://github.com/veloserve/veloserve)
 
-1. Click the button above
-2. Wait for the workspace to build
-3. The server starts automatically!
-4. Click the URL in the terminal or go to **Ports** → **Open Browser**
+1. **Click the button above** to launch the Ona environment
+2. **Wait ~2-3 minutes** for the environment to build (Rust + PHP pre-installed)
+3. **Start VeloServe:**
+   ```bash
+   make run
+   ```
+4. **Open the port:**
+   - Look at the **Ports panel** (bottom of the screen)
+   - Find port `8080` 
+   - Click the 🌐 **globe icon** or the **address** to open in browser
+   - If not visible, click **Make Public** to expose the port
+5. ✅ **VeloServe is running!**
+
+> **💡 Ona.com Port Forwarding:** Ona automatically creates a public URL like:
+> `https://8080--YOUR-WORKSPACE-ID.eu-central-1-01.gitpod.dev`
+> This URL is accessible from anywhere and forwards to your VeloServe instance.
+
+### 🔵 Option 2: GitHub Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=veloserve/veloserve)
+
+1. **Click the button above** (or go to **Code** → **Codespaces** → **Create codespace**)
+2. **Wait ~2 minutes** for setup to complete
+3. **Start VeloServe:**
+   ```bash
+   make run
+   ```
+4. **Click the Ports tab** → Click the 🌐 globe icon next to port `8080`
+5. ✅ **VeloServe is running!**
 
 ### Test Your Instance
 
@@ -51,20 +63,76 @@ Once the server is running, try these endpoints:
 | `/` | Static HTML welcome page |
 | `/health` | Health check (returns "OK") |
 | `/api/v1/status` | Server status JSON |
-| `/api/v1/cache/stats` | Cache statistics |
 | `/index.php` | PHP test page |
 | `/info.php` | PHP configuration info |
 
-**Example curl commands:**
+---
+
+## 🌐 Optional: WordPress Demo
+
+**Want to test VeloServe with a real WordPress site?** You can optionally install WordPress after your environment starts.
+
+### Install WordPress (Ona.com or Codespaces)
+
+After your environment is running, simply run:
+
 ```bash
-# Health check
-curl https://your-codespace-url.github.dev/health
+make wordpress
+```
 
-# API status
-curl https://your-codespace-url.github.dev/api/v1/status
+This will:
+- ✅ Download WordPress automatically
+- ✅ Configure SQLite database (no MySQL needed!)
+- ✅ Start VeloServe with WordPress
+- ✅ Open the WordPress installation wizard
 
-# PHP test
-curl https://your-codespace-url.github.dev/index.php
+### Step-by-Step WordPress Demo
+
+| Step | Ona.com | GitHub Codespaces |
+|------|---------|-------------------|
+| 1. Open environment | [Open in Ona](https://ona.com/#https://github.com/veloserve/veloserve) | [Open in Codespaces](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=veloserve/veloserve) |
+| 2. Wait for build | ~2-3 minutes | ~2 minutes |
+| 3. Install WordPress | `make wordpress` | `make wordpress` |
+| 4. Open browser | Click 🌐 on port 8080 | Click 🌐 on port 8080 |
+| 5. Complete setup | WordPress wizard appears! | WordPress wizard appears! |
+
+### WordPress Demo Features
+
+- ✅ **No MySQL Required** - Uses SQLite for easy demo
+- ✅ **Pre-configured** - Works out of the box
+- ✅ **Auto URL Detection** - Works with port forwarding
+- ✅ **Debug Mode** - See errors during development
+
+### Available Commands
+
+```bash
+# Basic VeloServe (no WordPress)
+make run
+
+# VeloServe + WordPress
+make wordpress
+
+# Setup WordPress without starting server
+make wordpress-setup
+
+# Run tests
+make test
+```
+
+### WordPress Configuration
+
+When running with WordPress, VeloServe uses this optimized configuration:
+
+```toml
+[[virtualhost]]
+domain = "*"
+root = "/var/www/wordpress"
+platform = "wordpress"
+
+[virtualhost.cache]
+enable = true
+ttl = 3600
+exclude = ["/wp-admin/*", "/wp-login.php"]
 ```
 
 ---
@@ -110,11 +178,74 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development instructions.
 
 ---
 
+## 🐘 PHP Architecture
+
+VeloServe supports **two PHP execution modes**:
+
+### Current: CGI Mode (v0.1.x)
+
+```
+┌─────────────────────────────────────┐
+│         VeloServe (Rust)            │
+│  ┌─────────────────────────────┐    │
+│  │   HTTP Server (Hyper)       │    │
+│  └──────────┬──────────────────┘    │
+│             │ spawn process         │
+│  ┌──────────▼──────────────────┐    │
+│  │   php-cgi (external)        │    │
+│  │   - Process pool with       │    │
+│  │     semaphore limiting      │    │
+│  │   - POST body via stdin     │    │
+│  │   - Full CGI environment    │    │
+│  └─────────────────────────────┘    │
+└─────────────────────────────────────┘
+```
+
+- ✅ Works now - stable and compatible
+- ✅ Full POST/GET support
+- ✅ All PHP extensions work
+- ⚠️ Process overhead per request
+
+### Planned: Embedded SAPI Mode (v1.0)
+
+```
+┌─────────────────────────────────────┐
+│         VeloServe (Rust)            │
+│  ┌─────────────────────────────┐    │
+│  │   HTTP Server (Hyper)       │    │
+│  └──────────┬──────────────────┘    │
+│             │ FFI call (zero-copy)  │
+│  ┌──────────▼──────────────────┐    │
+│  │   libphp.so (embedded)      │    │
+│  │   - PHP runs in-process     │    │
+│  │   - No fork/exec overhead   │    │
+│  │   - Shared memory           │    │
+│  └─────────────────────────────┘    │
+└─────────────────────────────────────┘
+```
+
+- 🚀 10-100x faster than CGI
+- 🚀 Single binary deployment
+- 🚀 True "integrated PHP engine"
+- 📋 Requires `libphp-embed` development files
+
+**Enable with:**
+```bash
+# Install PHP embed SAPI
+sudo apt install php-dev libphp-embed
+
+# Build VeloServe with embedded PHP
+cargo build --features php-embed
+```
+
+---
+
 ## ✨ Key Features
 
 ### 1. Integrated PHP Engine
 
-- **Embedded PHP interpreter** (libphp or custom PHP SAPI)
+- **CGI Mode** (current): Process pool with `php-cgi` - works everywhere
+- **SAPI Mode** (planned): Embedded `libphp` via FFI - maximum performance
 - No PHP-FPM required - direct process integration
 - Thread-safe or process-pool architecture
 - Support for PHP 7.4, 8.0, 8.1, 8.2, 8.3+
