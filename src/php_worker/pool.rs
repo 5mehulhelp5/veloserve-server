@@ -87,7 +87,7 @@ impl WorkerPool {
     pub fn execute(&mut self, request: &PhpRequest) -> PhpResponse {
         if let Some(worker) = self.workers.iter_mut().find(|w| !w.busy) {
             worker.busy = true;
-            let result = self.run_php(request);
+            let result = run_php(&self.php_binary, &self.memory_limit, self.max_execution_time, request);
             worker.busy = false;
             result
         } else if self.request_queue.len() < 100 {
@@ -95,37 +95,6 @@ impl WorkerPool {
             PhpResponse::queued()
         } else {
             PhpResponse::error("Worker pool exhausted, request dropped")
-        }
-    }
-
-    fn run_php(&self, request: &PhpRequest) -> PhpResponse {
-        let mut cmd = Command::new(&self.php_binary);
-        cmd.arg("-d").arg(format!("memory_limit={}", self.memory_limit));
-        cmd.arg("-d").arg(format!("max_execution_time={}", self.max_execution_time));
-        cmd.arg(&request.script_path);
-
-        // Pass CGI environment variables
-        for (key, value) in &request.server_vars {
-            cmd.env(key, value);
-        }
-
-        let output = cmd.output();
-
-        match output {
-            Ok(result) => {
-                let stdout = String::from_utf8_lossy(&result.stdout);
-                let stderr = String::from_utf8_lossy(&result.stderr);
-
-                if result.status.success() {
-                    PhpResponse::ok(&stdout, &stderr)
-                } else {
-                    PhpResponse::error(&format!("PHP exit code {:?}: {}",
-                        result.status.code(), stderr))
-                }
-            }
-            Err(e) => {
-                PhpResponse::error(&format!("Failed to execute PHP ({:?}): {}", self.php_binary, e))
-            }
         }
     }
 
@@ -147,6 +116,34 @@ impl WorkerPool {
             let _ = worker.process.kill();
         }
         self.workers.clear();
+    }
+}
+
+fn run_php(php_binary: &std::path::Path, memory_limit: &str, max_execution_time: u32, request: &PhpRequest) -> PhpResponse {
+    let mut cmd = Command::new(php_binary);
+    cmd.arg("-d").arg(format!("memory_limit={}", memory_limit));
+    cmd.arg("-d").arg(format!("max_execution_time={}", max_execution_time));
+    cmd.arg(&request.script_path);
+
+    for (key, value) in &request.server_vars {
+        cmd.env(key, value);
+    }
+
+    match cmd.output() {
+        Ok(result) => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let stderr = String::from_utf8_lossy(&result.stderr);
+
+            if result.status.success() {
+                PhpResponse::ok(&stdout, &stderr)
+            } else {
+                PhpResponse::error(&format!("PHP exit code {:?}: {}",
+                    result.status.code(), stderr))
+            }
+        }
+        Err(e) => {
+            PhpResponse::error(&format!("Failed to execute PHP ({:?}): {}", php_binary, e))
+        }
     }
 }
 
